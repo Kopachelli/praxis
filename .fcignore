@@ -1,0 +1,44 @@
+.env
+.env.*
+!.env.example
+.git/**
+.venv/**
+.s/**
+.fc-cli-work/**
+.browser-shot-profile/**
+.qwen/**
+.serena/**
+.codex/**
+.agents/**
+graphify-out/**
+.pytest_cache/**
+.pytest-tmp/**
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/**
+.ruff_cache/**
+.mypy_cache/**
+.pyright/**
+**/__pycache__/**
+**/*.pyc
+**/*.pyo
+*.log
+*.pem
+# Re-include library CA bundles (e.g. certifi cacert.pem) required for TLS at
+# runtime; without this the *.pem rule strips certifi.where()'s cacert.pem from
+# the FC package and the controller crashes at boot on ssl.load_verify_locations.
+# The *.pem rule above still excludes any stray secret .pem outside python/.
+!python/**/*.pem
+!python/certifi/cacert.pem
+*.key
+.DS_Store
+Thumbs.db
+docs/**
+tests/**
+design-system/**
+scripts/**
+deploy/**
+AGENTS.md
+PROMPTS.md
+codex-config.snippet.toml

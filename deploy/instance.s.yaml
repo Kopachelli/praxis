@@ -1,0 +1,10 @@
+edition: 3.0.0
+name: praxis
+access: default
+
+resources:
+  praxis:
+    component: fc3
+    props:
+      region: ap-southeast-1
+      functionName: praxis-api

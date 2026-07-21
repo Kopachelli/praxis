@@ -1,0 +1,46 @@
+flowchart LR
+    subgraph Sources
+        A[Sentry / Uptime / CI / Cloud alarms]
+    end
+
+    subgraph AlibabaCloud["Alibaba Cloud (deployment proof)"]
+        subgraph FC["Function Compute 3.0 — FastAPI web function"]
+            W["/webhook<br/>256 KiB ingress gate · HMAC verify · normalize · process-local dedup"]
+            SM["Incident state machine<br/>NEW→TRIAGED→AWAITING_APPROVAL→EXECUTING→RESOLVED"]
+            AG["Agent core<br/>thinking-mode triage · tool calling · plan JSON"]
+            EX["Executor<br/>real safe tool + labeled dry-runs"]
+            TR["Decision trail<br/>thoughts · tool calls · approvals · routing outcomes"]
+            UI["ui/index.html<br/>timeline + Approve/Reject"]
+        end
+        DT["praxis-demo-target<br/>isolated disposable FC function"]
+        TS[("Tablestore<br/>vector index 1024-d<br/>KnnVectorQuery")]
+    end
+
+    subgraph QwenCloud["Qwen Cloud (Model Studio)"]
+        M1x["PRIMARY: qwen3.7-max (M0 verified)<br/>fallback: qwen3-max → qwen-plus"]
+        M2x["FAST: qwen-flash"]
+        EMB["text-embedding-v4 (1024-d)"]
+    end
+
+    subgraph OpenRouter["OpenRouter (same-Qwen fallback only)"]
+        OR["PRIMARY: qwen/qwen3.7-max<br/>→ qwen/qwen3-max → qwen/qwen-plus<br/>FAST: qwen/qwen3.6-flash"]
+    end
+
+    H((Demo owner<br/>intended approver))
+    LIM["Current runtime limits<br/>ADR-026/027/030 proposed · M4 live proof pending<br/>Uncertain-outcome reconciliation: ADR-028 accepted<br/>Read-only recorder access: ADR-029 accepted"]
+
+    A -->|POST /webhook| W --> SM --> AG
+    AG <-->|chat/completions + tools| M1x
+    AG <-->|classification| M2x
+    AG -.->|ADR-008/013 bounded fallback after eligible failure| OR
+    AG -->|plan| SM
+    SM -->|AWAITING_APPROVAL| UI --> H
+    H -->|approval record; v1 caller unauthenticated| SM -->|approved plan only| EX
+    H -->|UI reject / API edit correction| SM
+    SM -.->|regenerate corrected plan| AG
+    EX -->|exact-allowlisted real restart| DT -->|new boot identity| EX
+    EX -->|results| TR
+    AG -->|thoughts/tool calls| TR
+    SM -->|post-resolve: attempt embed + write| EMB --> TS
+    AG <-->|KnnVectorQuery recall| TS
+    LIM -.-> SM

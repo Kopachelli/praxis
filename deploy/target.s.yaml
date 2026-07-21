@@ -1,0 +1,66 @@
+edition: 3.0.0
+name: praxis-demo-target-bootstrap
+access: default
+
+vars:
+  region: ap-southeast-1
+
+resources:
+  demoTarget:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: praxis-demo-target
+      description: Isolated disposable restart target for the Praxis HITL demo
+      runtime: custom.debian10
+      code: ../
+      memorySize: 256
+      timeout: 30
+      instanceConcurrency: 1
+      concurrencyConfig:
+        reservedConcurrency: 1
+      provisionConfig:
+        alwaysAllocateCPU: true
+        alwaysAllocateGPU: false
+        defaultTarget: 1
+        scheduledActions: []
+        targetTrackingPolicies: []
+      internetAccess: false
+      customRuntimeConfig:
+        command:
+          - /var/fc/lang/python3.10/bin/python3
+        args:
+          - -m
+          - uvicorn
+          - app.demo_target:app
+          - --host
+          - 0.0.0.0
+          - --port
+          - '9000'
+          - --timeout-keep-alive
+          - '86400'
+        port: 9000
+        healthCheckConfig:
+          httpGetUrl: /healthz
+          initialDelaySeconds: 1
+          periodSeconds: 3
+          timeoutSeconds: 1
+          failureThreshold: 3
+          successThreshold: 1
+      environmentVariables:
+        PATH: /var/fc/lang/python3.10/bin:/code/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/code:/code/bin:/opt:/opt/bin
+        PYTHONPATH: /code/python:/code
+        PORT: '9000'
+        APP_ENV: production
+        PRAXIS_DEMO_TARGET_TOKEN: ${env('PRAXIS_DEMO_TARGET_TOKEN')}
+      logConfig: auto
+      triggers:
+        - triggerName: http
+          triggerType: http
+          qualifier: LATEST
+          triggerConfig:
+            authType: anonymous
+            disableURLInternet: false
+            methods:
+              - GET
+              - POST

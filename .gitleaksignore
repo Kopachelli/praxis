@@ -1,0 +1,9 @@
+# Reviewed gitleaks false positives (2026-07-21). Each entry was manually
+# verified to contain no real credential before being allowlisted.
+#
+# Synthetic JWT fixture: base64-decodes to {"alg":"HS256"}.payload.signature,
+# used only to exercise the redaction pipeline. Not a real token.
+tests/test_redaction.py:generic-api-key:17
+# Worklog prose describing the redaction boundary ("JWT/Bearer/assignment
+# forms"); a high-entropy word in a sentence, not a secret.
+docs/worklog/2026-07-21.md:generic-api-key:611

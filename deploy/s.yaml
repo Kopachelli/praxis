@@ -1,0 +1,151 @@
+edition: 3.0.0
+name: praxis
+access: default
+
+vars:
+  region: ap-southeast-1
+
+resources:
+  demoTarget:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: praxis-demo-target
+      description: Isolated disposable restart target for the Praxis HITL demo
+      runtime: custom.debian10
+      code: ../
+      memorySize: 256
+      timeout: 30
+      instanceConcurrency: 1
+      concurrencyConfig:
+        reservedConcurrency: 1
+      provisionConfig:
+        alwaysAllocateCPU: true
+        alwaysAllocateGPU: false
+        defaultTarget: 1
+        scheduledActions: []
+        targetTrackingPolicies: []
+      internetAccess: false
+      customRuntimeConfig:
+        command:
+          - /var/fc/lang/python3.10/bin/python3
+        args:
+          - -m
+          - uvicorn
+          - app.demo_target:app
+          - --host
+          - 0.0.0.0
+          - --port
+          - '9000'
+          - --timeout-keep-alive
+          - '86400'
+        port: 9000
+        healthCheckConfig:
+          httpGetUrl: /healthz
+          initialDelaySeconds: 1
+          periodSeconds: 3
+          timeoutSeconds: 1
+          failureThreshold: 3
+          successThreshold: 1
+      environmentVariables:
+        PATH: /var/fc/lang/python3.10/bin:/code/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/code:/code/bin:/opt:/opt/bin
+        PYTHONPATH: /code/python:/code
+        PORT: '9000'
+        APP_ENV: production
+        PRAXIS_DEMO_TARGET_TOKEN: ${env('PRAXIS_DEMO_TARGET_TOKEN')}
+      logConfig: auto
+      triggers:
+        - triggerName: http
+          triggerType: http
+          qualifier: LATEST
+          triggerConfig:
+            authType: anonymous
+            disableURLInternet: false
+            methods:
+              - GET
+              - POST
+
+  praxis:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: praxis-api
+      description: Praxis Qwen alert-to-remediation API
+      role: ${env('FC_EXECUTION_ROLE_ARN')}
+      runtime: custom.debian10
+      code: ../
+      memorySize: 1024
+      timeout: 120
+      instanceConcurrency: 1
+      concurrencyConfig:
+        reservedConcurrency: 1
+      provisionConfig:
+        alwaysAllocateCPU: true
+        alwaysAllocateGPU: false
+        defaultTarget: 1
+        scheduledActions: []
+        targetTrackingPolicies: []
+      internetAccess: true
+      customRuntimeConfig:
+        command:
+          - /var/fc/lang/python3.10/bin/python3
+        args:
+          - -m
+          - uvicorn
+          - app.main:app
+          - --log-config
+          - app/uvicorn_log_config.json
+          - --host
+          - 0.0.0.0
+          - --port
+          - '9000'
+          - --timeout-keep-alive
+          - '86400'
+        port: 9000
+        healthCheckConfig:
+          httpGetUrl: /healthz
+          initialDelaySeconds: 1
+          periodSeconds: 3
+          timeoutSeconds: 1
+          failureThreshold: 3
+          successThreshold: 1
+      environmentVariables:
+        PATH: /var/fc/lang/python3.10/bin:/code/python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/code:/code/bin:/opt:/opt/bin
+        PYTHONPATH: /code/python:/code
+        APP_ENV: prod
+        APP_VERSION: '0.1.0'
+        DEPLOYED_ON: alibaba-fc
+        PORT: '9000'
+        PROVIDER_ORDER: qwencloud,openrouter
+        DASHSCOPE_API_KEY: ${env('DASHSCOPE_API_KEY')}
+        OPENROUTER_API_KEY: ${env('OPENROUTER_API_KEY')}
+        PRAXIS_OPERATOR_TOKEN: ${env('PRAXIS_OPERATOR_TOKEN')}
+        WEBHOOK_SIGNING_SECRET: ${env('WEBHOOK_SIGNING_SECRET')}
+        DEDUP_WINDOW_SECONDS: ${env('DEDUP_WINDOW_SECONDS')}
+        MAX_WEBHOOK_BODY_BYTES: ${env('MAX_WEBHOOK_BODY_BYTES')}
+        MAX_APPROVAL_BODY_BYTES: ${env('MAX_APPROVAL_BODY_BYTES')}
+        QWEN_BASE_URL: ${env('QWEN_BASE_URL')}
+        QWENCLOUD_MODELS: ${env('QWENCLOUD_MODELS')}
+        OPENROUTER_MODELS: ${env('OPENROUTER_MODELS')}
+        PRIMARY_MODEL: ${env('PRIMARY_MODEL')}
+        FAST_MODEL: ${env('FAST_MODEL')}
+        OPENROUTER_FAST_MODEL: ${env('OPENROUTER_FAST_MODEL')}
+        PRAXIS_DEMO_TARGET_URL: ${env('PRAXIS_DEMO_TARGET_URL')}
+        PRAXIS_DEMO_TARGET_TOKEN: ${env('PRAXIS_DEMO_TARGET_TOKEN')}
+        MEMORY_BACKEND: ${env('MEMORY_BACKEND')}
+        MEMORY_SIMILARITY_THRESHOLD: ${env('MEMORY_SIMILARITY_THRESHOLD')}
+        EMBEDDING_MODEL: ${env('EMBEDDING_MODEL')}
+        EMBEDDING_DIM: ${env('EMBEDDING_DIM')}
+        TABLESTORE_ENDPOINT: ${env('TABLESTORE_ENDPOINT')}
+        TABLESTORE_INSTANCE: ${env('TABLESTORE_INSTANCE')}
+      logConfig: auto
+      triggers:
+        - triggerName: http
+          triggerType: http
+          qualifier: LATEST
+          triggerConfig:
+            authType: anonymous
+            disableURLInternet: false
+            methods:
+              - GET
+              - POST

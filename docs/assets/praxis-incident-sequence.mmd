@@ -1,0 +1,63 @@
+sequenceDiagram
+    autonumber
+    participant S as Alert source
+    participant C as Alibaba FC controller
+    participant Q as Qwen router
+    participant QC as Qwen Cloud
+    participant OR as OpenRouter (same Qwen only)
+    participant TS as Tablestore
+    participant H as Demo owner and UI (v1 caller unauthenticated)
+    participant X as Approved executor and isolated FC target
+
+    S->>C: POST /webhook (body HMAC; separate unsigned v1 idempotency key)
+    C-->>S: 202 incident snapshot (NEW)
+    Note over C,Q: Logical async flow; ADR-024 post-response continuity accepted, live proof pending
+    C->>Q: Classify with FAST_MODEL
+    Q->>QC: qwen-flash completion
+    alt Eligible Qwen Cloud failure (ADR-008)
+        QC--xQ: auth / model / quota / 5xx / timeout
+        Q->>OR: qwen/qwen3.6-flash fallback
+        OR-->>Q: Same-Qwen classification
+    else Qwen Cloud succeeds
+        QC-->>Q: Classification
+    end
+    Q-->>C: Classification + trail evidence
+    C->>QC: text-embedding-v4
+    QC-->>C: 1024-d incident vector
+    C->>TS: KnnVectorQuery (same service)
+    TS-->>C: Top prior resolution or no match
+    C->>Q: Root-cause + plan (thinking mode, read tools)
+    Q->>QC: qwen3.7-max chain
+    alt Eligible Qwen Cloud chain exhaustion
+        QC--xQ: auth / model / quota / 5xx / timeout
+        Q->>OR: Same-Qwen primary fallback chain
+        OR-->>Q: Plan/tool response
+    else Qwen Cloud primary succeeds
+        QC-->>Q: Plan/tool response
+    end
+    Q-->>C: Strict validated remediation plan
+    C-->>H: AWAITING_APPROVAL + full decision trail
+
+    alt Owner approval recorded for this demo
+        H->>C: POST approve
+        Note over C,X: Verified success -> RESOLVED; uncertain post-dispatch outcome -> RECONCILIATION_REQUIRED (ADR-028 accepted)
+        C->>X: Execute immutable approved plan only
+        X-->>C: Step results + isolated-target proof
+        C->>C: RESOLVED
+        C->>QC: Post-resolution text-embedding-v4 attempt
+        alt Memory delivery succeeds
+            QC-->>C: 1024-d resolution vector
+            C->>TS: PutRow + search-visibility check
+            C-->>H: RESOLVED + memory stored trail
+        else Embedding or write unavailable
+            C->>C: Record non-fatal memory failure
+            C-->>H: RESOLVED + memory unavailable trail
+        end
+    else Owner rejects or edits this demo
+        H->>C: POST reject or API edit correction
+        C->>Q: Regenerate without executing
+        Q-->>C: Corrected validated plan
+        C-->>H: AWAITING_APPROVAL again
+    end
+
+    Note over S,H: Active incidents and same-key dedup are process-local. After a stored row, a distinct recurrence can recall its incident ID and similarity; M4 live proof is pending.

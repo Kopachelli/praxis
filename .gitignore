@@ -1,0 +1,37 @@
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.venv/
+__pycache__/
+*.pyc
+.s/
+.fc-cli-work/
+.pytest-tmp/
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+python/
+node_modules/
+
+# Local browser, agent, and analysis state
+.browser-shot-profile/
+.qwen/
+.serena/
+.codex/
+.agents/
+graphify-out/
+
+# Non-product reference bundle
+design-system/
+
+# Local debris
+*.log
+.DS_Store
+Thumbs.db

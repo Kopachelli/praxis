@@ -1,0 +1,243 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120" role="img" aria-labelledby="title desc">
+  <title id="title">Praxis alert-to-remediation architecture</title>
+  <desc id="desc">A logical summary of the Praxis Qwen and Alibaba architecture. A monitoring alert enters a signed webhook on Function Compute. A Qwen-only agent triages it, creates a remediation plan, and requires an approval record before the safe executor can restart an isolated target. The current demo caller is unauthenticated; runtime hardening remains proposed in ADR-024–028, and least-privilege recorder access remains proposed in ADR-029.</desc>
+  <metadata><![CDATA[
+flowchart LR
+    subgraph Sources
+        A[Sentry / Uptime / CI / Cloud alarms]
+    end
+
+    subgraph AlibabaCloud["Alibaba Cloud (deployment proof)"]
+        subgraph FC["Function Compute 3.0 — FastAPI web function"]
+            W["/webhook<br/>256 KiB ingress gate · HMAC verify · normalize · process-local dedup"]
+            SM["Incident state machine<br/>NEW→TRIAGED→AWAITING_APPROVAL→EXECUTING→RESOLVED"]
+            AG["Agent core<br/>thinking-mode triage · tool calling · plan JSON"]
+            EX["Executor<br/>real safe tool + labeled dry-runs"]
+            TR["Decision trail<br/>thoughts · tool calls · approvals · routing outcomes"]
+            UI["ui/index.html<br/>timeline + Approve/Reject"]
+        end
+        DT["praxis-demo-target<br/>isolated disposable FC function"]
+        TS[("Tablestore<br/>vector index 1024-d<br/>KnnVectorQuery")]
+    end
+
+    subgraph QwenCloud["Qwen Cloud (Model Studio)"]
+        M1x["PRIMARY: qwen3.7-max (M0 verified)<br/>fallback: qwen3-max → qwen-plus"]
+        M2x["FAST: qwen-flash"]
+        EMB["text-embedding-v4 (1024-d)"]
+    end
+
+    subgraph OpenRouter["OpenRouter (same-Qwen fallback only)"]
+        OR["PRIMARY: qwen/qwen3.7-max<br/>→ qwen/qwen3-max → qwen/qwen-plus<br/>FAST: qwen/qwen3.6-flash"]
+    end
+
+    H((Demo owner<br/>intended approver))
+    LIM["Current runtime limits<br/>ADR-024–028 proposed · M4 live proof pending<br/>Recorder access: ADR-029 proposed"]
+
+    A -->|POST /webhook| W --> SM --> AG
+    AG <-->|chat/completions + tools| M1x
+    AG <-->|classification| M2x
+    AG -.->|ADR-008/013 bounded fallback after eligible failure| OR
+    AG -->|plan| SM
+    SM -->|AWAITING_APPROVAL| UI --> H
+    H -->|approval record; v1 caller unauthenticated| SM -->|approved plan only| EX
+    H -->|UI reject / API edit correction| SM
+    SM -.->|regenerate corrected plan| AG
+    EX -->|exact-allowlisted real restart| DT -->|new boot identity| EX
+    EX -->|results| TR
+    AG -->|thoughts/tool calls| TR
+    SM -->|post-resolve: attempt embed + write| EMB --> TS
+    AG <-->|KnnVectorQuery recall| TS
+    LIM -.-> SM
+  ]]></metadata>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#eef2ff"/>
+    </linearGradient>
+    <linearGradient id="cloud-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff7ed"/>
+      <stop offset="1" stop-color="#fffbeb"/>
+    </linearGradient>
+    <linearGradient id="qwen-fill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef2ff"/>
+      <stop offset="1" stop-color="#f5f3ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .title { font: 700 30px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 16px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #475569; }
+      .limitation { font: 600 13px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #9a3412; }
+      .group-title { font: 700 17px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #334155; letter-spacing: .3px; }
+      .node-title { font: 700 16px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #0f172a; }
+      .node-copy { font: 400 14px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #334155; }
+      .edge-label { font: 600 12px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; fill: #475569; }
+      .group { stroke-width: 2; }
+      .node { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; filter: url(#shadow); }
+      .qwen-node { fill: url(#qwen-fill); stroke: #818cf8; stroke-width: 2; filter: url(#shadow); }
+      .safety-node { fill: #ecfdf5; stroke: #10b981; stroke-width: 3; filter: url(#shadow); }
+      .edge { fill: none; stroke: #475569; stroke-width: 2.2; marker-end: url(#arrow); }
+      .edge-both { fill: none; stroke: #475569; stroke-width: 2.2; marker-start: url(#arrow); marker-end: url(#arrow); }
+      .edge-dashed { fill: none; stroke: #6366f1; stroke-width: 2.2; stroke-dasharray: 8 7; marker-end: url(#arrow); }
+      .audit-edge { fill: none; stroke: #94a3b8; stroke-width: 1.8; marker-end: url(#arrow); }
+      .label-bg { fill: #f8fafc; opacity: .96; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1120" fill="url(#bg)"/>
+  <text x="48" y="52" class="title">Praxis — Alert-to-Remediation Autopilot</text>
+  <text x="48" y="80" class="subtitle">Qwen-only reasoning · approval-record gate · auditable execution · Alibaba Cloud deployment</text>
+  <text x="48" y="101" class="limitation">Logical design summary · runtime ADR-024–028 proposed · recorder ADR-029 proposed · M4 live write/recall proof pending</text>
+
+  <!-- Group boundaries -->
+  <rect x="280" y="110" width="1160" height="950" rx="26" fill="url(#cloud-fill)" stroke="#fb923c" class="group"/>
+  <text x="310" y="145" class="group-title">Alibaba Cloud</text>
+  <rect x="315" y="165" width="835" height="710" rx="22" fill="#ffffff" fill-opacity=".62" stroke="#fdba74" class="group"/>
+  <text x="345" y="200" class="group-title">Function Compute 3.0 — Python 3.10 + FastAPI controller</text>
+
+  <rect x="1470" y="110" width="290" height="580" rx="26" fill="url(#qwen-fill)" stroke="#818cf8" class="group"/>
+  <text x="1500" y="145" class="group-title">Qwen-only model routing</text>
+
+  <!-- External actors -->
+  <rect x="35" y="245" width="205" height="112" rx="18" class="node"/>
+  <text x="137.5" y="279" text-anchor="middle" class="node-title">Monitoring alerts</text>
+  <text x="137.5" y="307" text-anchor="middle" class="node-copy">Sentry · uptime · CI</text>
+  <text x="137.5" y="330" text-anchor="middle" class="node-copy">cloud alarms</text>
+
+  <circle cx="137" cy="550" r="83" class="node"/>
+  <circle cx="137" cy="526" r="19" fill="#cbd5e1"/>
+  <path d="M100 574 C105 542 169 542 174 574" fill="#cbd5e1"/>
+  <text x="137" y="611" text-anchor="middle" class="node-title">Demo owner</text>
+
+  <!-- Controller nodes -->
+  <rect x="350" y="245" width="215" height="118" rx="16" class="node"/>
+  <text x="457.5" y="278" text-anchor="middle" class="node-title">Signed webhook intake</text>
+  <text x="457.5" y="307" text-anchor="middle" class="node-copy">HMAC · normalization</text>
+  <text x="457.5" y="331" text-anchor="middle" class="node-copy">process-local dedup</text>
+
+  <rect x="620" y="226" width="240" height="156" rx="16" class="node"/>
+  <text x="740" y="259" text-anchor="middle" class="node-title">Incident state machine</text>
+  <text x="740" y="290" text-anchor="middle" class="node-copy">NEW → TRIAGED</text>
+  <text x="740" y="315" text-anchor="middle" class="node-copy">→ AWAITING_APPROVAL</text>
+  <text x="740" y="340" text-anchor="middle" class="node-copy">→ EXECUTING → RESOLVED</text>
+
+  <rect x="915" y="245" width="205" height="118" rx="16" class="qwen-node"/>
+  <text x="1017.5" y="279" text-anchor="middle" class="node-title">Qwen agent</text>
+  <text x="1017.5" y="307" text-anchor="middle" class="node-copy">classification · root cause</text>
+  <text x="1017.5" y="331" text-anchor="middle" class="node-copy">remediation plan</text>
+
+  <rect x="350" y="483" width="215" height="126" rx="16" class="node"/>
+  <text x="457.5" y="517" text-anchor="middle" class="node-title">Operator dashboard</text>
+  <text x="457.5" y="546" text-anchor="middle" class="node-copy">incident timeline</text>
+  <text x="457.5" y="571" text-anchor="middle" class="node-copy">Approve · Reject</text>
+
+  <path d="M740 468 L820 546 L740 624 L660 546 Z" class="safety-node"/>
+  <text x="740" y="529" text-anchor="middle" class="node-title">Mandatory</text>
+  <text x="740" y="553" text-anchor="middle" class="node-title">approval record</text>
+  <text x="740" y="579" text-anchor="middle" class="node-copy">v1 caller unauthenticated</text>
+
+  <rect x="915" y="483" width="205" height="126" rx="16" class="safety-node"/>
+  <text x="1017.5" y="526" text-anchor="middle" class="node-title">Safe executor</text>
+  <text x="1017.5" y="555" text-anchor="middle" class="node-copy">approved plan only</text>
+  <text x="1017.5" y="580" text-anchor="middle" class="node-copy">allowlisted actions</text>
+
+  <rect x="440" y="710" width="310" height="122" rx="16" class="node"/>
+  <text x="595" y="750" text-anchor="middle" class="node-title">Auditable decision trail</text>
+  <text x="595" y="779" text-anchor="middle" class="node-copy">reasoning · calls · approvals</text>
+  <text x="595" y="804" text-anchor="middle" class="node-copy">execution results</text>
+
+  <!-- Alibaba resources outside controller -->
+  <rect x="1185" y="480" width="215" height="132" rx="16" class="safety-node"/>
+  <text x="1292.5" y="518" text-anchor="middle" class="node-title">Isolated Function</text>
+  <text x="1292.5" y="541" text-anchor="middle" class="node-title">Compute target</text>
+  <text x="1292.5" y="573" text-anchor="middle" class="node-copy">real safe service restart</text>
+
+  <path d="M850 925 C850 893 1115 893 1115 925 L1115 1005 C1115 1037 850 1037 850 1005 Z" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" filter="url(#shadow)"/>
+  <ellipse cx="982.5" cy="925" rx="132.5" ry="32" fill="#eef2ff" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="982.5" y="932" text-anchor="middle" class="node-title">Incident memory</text>
+  <text x="982.5" y="976" text-anchor="middle" class="node-copy">Tablestore vector search</text>
+  <text x="982.5" y="1001" text-anchor="middle" class="node-copy">in-memory fallback</text>
+
+  <!-- Qwen routing -->
+  <rect x="1500" y="190" width="230" height="205" rx="16" class="qwen-node"/>
+  <text x="1615" y="229" text-anchor="middle" class="node-title">Qwen Cloud — primary</text>
+  <text x="1615" y="264" text-anchor="middle" class="node-copy">qwen3.7-max</text>
+  <text x="1615" y="289" text-anchor="middle" class="node-copy">→ qwen3-max → qwen-plus</text>
+  <text x="1615" y="325" text-anchor="middle" class="node-copy">qwen-flash</text>
+  <text x="1615" y="350" text-anchor="middle" class="node-copy">text-embedding-v4</text>
+
+  <rect x="1500" y="515" width="230" height="120" rx="16" class="qwen-node"/>
+  <text x="1615" y="553" text-anchor="middle" class="node-title">OpenRouter fallback</text>
+  <text x="1615" y="584" text-anchor="middle" class="node-copy">automatic · same Qwen</text>
+  <text x="1615" y="608" text-anchor="middle" class="node-copy">model family only</text>
+
+  <!-- Primary alert and reasoning flow -->
+  <path d="M240 301 L350 301" class="edge"/>
+  <rect x="255" y="270" width="82" height="23" rx="5" class="label-bg"/>
+  <text x="296" y="286" text-anchor="middle" class="edge-label">POST /webhook</text>
+
+  <path d="M565 304 L620 304" class="edge"/>
+  <path d="M860 304 L915 304" class="edge"/>
+  <path d="M1120 304 L1500 304" class="edge-both"/>
+  <rect x="1222" y="273" width="178" height="23" rx="5" class="label-bg"/>
+  <text x="1311" y="289" text-anchor="middle" class="edge-label">thinking mode + tool calling</text>
+
+  <path d="M1120 350 L1440 350 L1440 575 L1500 575" class="edge-dashed"/>
+  <rect x="1255" y="319" width="150" height="23" rx="5" class="label-bg"/>
+  <text x="1330" y="335" text-anchor="middle" class="edge-label">eligible failure only</text>
+
+  <!-- Plan and approval flow -->
+  <path d="M915 350 C875 420 825 424 784 382" class="edge"/>
+  <rect x="808" y="400" width="178" height="23" rx="5" class="label-bg"/>
+  <text x="897" y="416" text-anchor="middle" class="edge-label">validated remediation plan</text>
+
+  <path d="M680 382 L680 430 L457 430 L457 483" class="edge"/>
+  <rect x="490" y="399" width="142" height="23" rx="5" class="label-bg"/>
+  <text x="561" y="415" text-anchor="middle" class="edge-label">AWAITING_APPROVAL</text>
+
+  <path d="M350 546 L220 546" class="edge"/>
+  <path d="M220 575 L620 575 L660 556" class="edge"/>
+  <rect x="348" y="581" width="146" height="23" rx="5" class="label-bg"/>
+  <text x="421" y="597" text-anchor="middle" class="edge-label">UI approve / reject</text>
+
+  <path d="M820 546 L915 546" class="edge"/>
+  <rect x="836" y="516" width="65" height="23" rx="5" class="label-bg"/>
+  <text x="868.5" y="532" text-anchor="middle" class="edge-label">approved</text>
+
+  <path d="M774 480 C810 420 900 401 967 363" class="edge"/>
+  <rect x="793" y="434" width="130" height="23" rx="5" class="label-bg"/>
+  <text x="858" y="450" text-anchor="middle" class="edge-label">UI reject · API edit</text>
+
+  <!-- Execution proof -->
+  <path d="M1120 510 L1148 510 L1148 455 L1292 455 L1292 480" class="edge"/>
+  <rect x="1162" y="423" width="115" height="23" rx="5" class="label-bg"/>
+  <text x="1219.5" y="439" text-anchor="middle" class="edge-label">allowlisted restart</text>
+  <path d="M1292 612 L1292 638 L1018 638 L1018 609" class="edge"/>
+  <rect x="1080" y="626" width="147" height="23" rx="5" class="label-bg"/>
+  <text x="1153.5" y="642" text-anchor="middle" class="edge-label">new boot identity proof</text>
+
+  <path d="M1018 483 L1018 430 L825 430 L825 382" class="edge"/>
+
+  <!-- Audit and memory paths -->
+  <path d="M967 363 L967 665 L750 747" class="audit-edge"/>
+  <path d="M706 612 L650 710" class="audit-edge"/>
+  <path d="M965 609 L720 710" class="audit-edge"/>
+
+  <path d="M1040 363 C1100 570 1085 725 1028 893" class="edge-both"/>
+  <rect x="1050" y="684" width="151" height="23" rx="5" class="label-bg"/>
+  <text x="1125.5" y="700" text-anchor="middle" class="edge-label">recall similar incidents</text>
+
+  <path d="M840 382 C840 650 865 790 940 895" class="edge"/>
+  <rect x="795" y="830" width="165" height="23" rx="5" class="label-bg"/>
+  <text x="877.5" y="846" text-anchor="middle" class="edge-label">attempt memory write</text>
+
+  <!-- Safety annotation -->
+  <path d="M630 662 L1125 662" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="5 6"/>
+  <rect x="728" y="650" width="300" height="25" rx="6" fill="#ecfdf5"/>
+  <text x="878" y="667" text-anchor="middle" class="edge-label" fill="#047857">No state change without an approval record</text>
+</svg>
