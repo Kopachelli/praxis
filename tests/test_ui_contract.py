@@ -85,3 +85,23 @@ def test_reconciliation_required_state_is_rendered_distinctly() -> None:
         'const isAwaitingApproval = state === "AWAITING_APPROVAL" && !viewState.readOnly;'
         in html
     )
+
+
+def test_public_demo_reads_ui_is_flag_gated_and_tokenless() -> None:
+    """ADR-031: the UI carries the server-stamped flag, exposes a tokenless
+    read-only entry, and only sends a bearer header when a token is present."""
+
+    html = UI_PATH.read_text(encoding="utf-8")
+
+    # Server-stamped flag placeholder and its reader.
+    assert 'id="praxis-public-demo-reads"' in html
+    assert "__PRAXIS_PUBLIC_DEMO_READS__" in html
+    assert "const publicReadsEnabled" in html
+    assert 'getAttribute("content") === "true"' in html
+    # Tokenless entry point and its lock-screen affordance.
+    assert "async function enterPublicDemoView()" in html
+    assert 'id="demo-view-button"' in html
+    # fetchJson only refuses when there is no token AND reads are not public, and
+    # only attaches the bearer header when a token is present.
+    assert "if (!hasToken && !publicReadsEnabled)" in html
+    assert "if (hasToken) headers.set(" in html

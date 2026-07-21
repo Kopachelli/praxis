@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta id="praxis-public-demo-reads" name="praxis-public-demo-reads" content="__PRAXIS_PUBLIC_DEMO_READS__">
   <meta
     http-equiv="Content-Security-Policy"
     content="default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'self'"
@@ -939,6 +940,7 @@
         <p id="operator-lock-error" class="operator-lock-error" role="alert" hidden></p>
         <button id="operator-unlock-button" class="action-button primary" type="submit">Unlock</button>
       </form>
+      <button id="demo-view-button" class="action-button" type="button" hidden>View the read-only demo — no token needed</button>
     </div>
   </section>
 
@@ -1068,6 +1070,8 @@
       operatorUnlockForm: document.getElementById("operator-unlock-form"),
       operatorTokenInput: document.getElementById("operator-token-input"),
       operatorUnlockButton: document.getElementById("operator-unlock-button"),
+      demoViewButton: document.getElementById("demo-view-button"),
+      publicDemoReadsFlag: document.getElementById("praxis-public-demo-reads"),
       operatorLockError: document.getElementById("operator-lock-error"),
       refreshButton: document.getElementById("refresh-button"),
       incidentList: document.getElementById("incident-list"),
@@ -1112,6 +1116,11 @@
       readOnly: false
     };
     let operatorToken = null;
+    // ADR-031: read from the server-stamped flag. When on, incident reads are
+    // public, so the UI may auto-enter a read-only view with no token.
+    const publicReadsEnabled =
+      elements.publicDemoReadsFlag &&
+      elements.publicDemoReadsFlag.getAttribute("content") === "true";
 
     // API-originated values are always assigned with textContent/createTextNode.
     // No untrusted value is interpolated into markup or passed through innerHTML.
@@ -1266,15 +1275,38 @@
       }
     }
 
+    async function enterPublicDemoView() {
+      // ADR-031: read-only public demo entry — no token, viewer role resolved by
+      // /session, and no approval controls. Falls back to the locked view if the
+      // deployment is not actually serving public reads.
+      operatorToken = null;
+      setConnection("loading", "Loading demo");
+      try {
+        await loadIncidents(true);
+        await determineRole();
+        await loadSelectedIncident(true);
+        revealOperatorView();
+        setConnection("online", "Live · read-only");
+        clearStatus();
+        return true;
+      } catch (error) {
+        lockOperatorView();
+        return false;
+      }
+    }
+
     async function fetchJson(path, options = {}) {
-      if (typeof operatorToken !== "string" || !operatorToken) {
+      const hasToken = typeof operatorToken === "string" && !!operatorToken;
+      // Without a token, only proceed when public demo reads are enabled; the
+      // request then carries no Authorization header (ADR-031).
+      if (!hasToken && !publicReadsEnabled) {
         throw new Error("Operator session locked.");
       }
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       const headers = new Headers(options.headers || {});
       headers.set("Accept", "application/json");
-      headers.set("Authorization", `Bearer ${operatorToken}`);
+      if (hasToken) headers.set("Authorization", `Bearer ${operatorToken}`);
       if (options.body) headers.set("Content-Type", "application/json");
 
       try {
@@ -1284,7 +1316,9 @@
           ? await response.json()
           : null;
         if (response.status === 401) {
-          lockOperatorView("Token not accepted. Try again.");
+          // A rejected operator token re-locks the view; a refused tokenless
+          // public read has no token to discard, so it just fails.
+          if (hasToken) lockOperatorView("Token not accepted. Try again.");
           throw new Error("Operator session locked.");
         }
         if (!response.ok) {
@@ -2030,6 +2064,7 @@
       elements.operatorTokenInput.value = "";
       unlockOperatorView(candidate);
     });
+    elements.demoViewButton.addEventListener("click", () => enterPublicDemoView());
     elements.approveButton.addEventListener("click", () => {
       if (window.confirm("Approve this exact remediation plan for execution?")) {
         submitDecision("approve");
@@ -2059,6 +2094,12 @@
     });
 
     lockOperatorView();
+    if (publicReadsEnabled) {
+      // ADR-031: reads are open — surface the tokenless demo entry and auto-load
+      // the read-only view. The operator unlock path stays available for approval.
+      elements.demoViewButton.hidden = false;
+      enterPublicDemoView();
+    }
     window.setInterval(() => poll(), POLL_INTERVAL_MS);
   </script>
 </body>

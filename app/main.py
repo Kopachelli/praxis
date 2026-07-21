@@ -279,8 +279,10 @@ def create_app(
         active_settings.operator_token,
         active_settings.viewer_token,
         logger,
+        public_demo_reads=active_settings.public_demo_reads,
     )
     application.state.viewer_configured = bool(active_settings.viewer_token)
+    application.state.public_demo_reads = active_settings.public_demo_reads
 
     # Registered first so the trace middleware declared below is outermost and
     # every size rejection receives the same server-owned trace contract.
@@ -405,9 +407,18 @@ def create_app(
 
     @application.get("/", include_in_schema=False)
     async def ui_index() -> HTMLResponse:
-        """Serve the dependency-free operator timeline [FR-14]."""
+        """Serve the dependency-free operator timeline [FR-14].
 
-        return HTMLResponse(UI_INDEX.read_text(encoding="utf-8"))
+        The ADR-031 public-demo-reads flag is stamped into the served HTML so the
+        UI can auto-enter a read-only view when reads are open; the token-gated
+        lock flow is unchanged when the flag is off.
+        """
+
+        html = UI_INDEX.read_text(encoding="utf-8").replace(
+            "__PRAXIS_PUBLIC_DEMO_READS__",
+            "true" if active_settings.public_demo_reads else "false",
+        )
+        return HTMLResponse(html)
 
     application.include_router(
         build_webhook_router(

@@ -168,12 +168,19 @@ def build_reader_auth_dependency(
     operator_token: object,
     viewer_token: object,
     logger: logging.Logger,
+    *,
+    public_demo_reads: bool = False,
 ) -> ReaderAuthDependency:
     """Accept the operator token or the ADR-029 read-only viewer token for reads.
 
     The resolved role is stashed on ``request.state.auth_role`` so a session
     endpoint can report it; mutation routes keep the operator-only dependency,
     so a viewer token is rejected there with the same fixed challenge.
+
+    When ``public_demo_reads`` is set (ADR-031), an anonymous or unrecognized
+    caller is admitted as a read-only ``viewer`` instead of being rejected, so a
+    public demo needs no token at all. A valid operator token is still resolved
+    to the operator role, and mutation routes remain operator-only regardless.
     """
 
     async def require_reader(
@@ -192,6 +199,10 @@ def build_reader_auth_dependency(
             else None
         )
         if role is None:
+            if public_demo_reads:
+                # ADR-031: least-privilege anonymous read-only demo access.
+                request.state.auth_role = VIEWER_ROLE
+                return
             trace_id = getattr(request.state, "trace_id", "-")
             log_operator_auth_rejected(logger, trace_id)
             raise HTTPException(

@@ -76,7 +76,7 @@ def _awaiting(store: IncidentStore) -> str:
     return incident.id
 
 
-def _app(store: IncidentStore):
+def _app(store: IncidentStore, **settings_overrides):
     lifecycle = LifecycleTaskManager(store, _LOGGER)
     agent_tasks = AgentTaskManager(_InertAgent(), _LOGGER, lifecycle=lifecycle)
     execution_tasks = AgentTaskManager(
@@ -86,7 +86,7 @@ def _app(store: IncidentStore):
         job_kind=LifecycleJobKind.APPROVED_EXECUTION,
     )
     return create_app(
-        _settings(),
+        _settings(**settings_overrides),
         store,
         agent_task_manager=agent_tasks,
         execution_task_manager=execution_tasks,
@@ -195,3 +195,67 @@ def test_ui_gates_controls_and_detects_viewer_role() -> None:
         in html
     )
     assert "viewState.readOnly ||" in html  # submitDecision guard
+
+
+def test_public_demo_reads_open_reads_but_never_mutations() -> None:
+    """ADR-031: with the flag on, anonymous callers read as viewers; mutations
+    stay operator-only and an operator token is still recognized as operator."""
+
+    store = IncidentStore(600)
+    incident_id = _awaiting(store)
+    with TestClient(_app(store, public_demo_reads=True)) as client:
+        assert client.get("/incidents").status_code == 200
+        assert client.get(f"/incidents/{incident_id}").status_code == 200
+        assert (
+            client.get(f"/incidents/{incident_id}/memory-match").status_code == 200
+        )
+        anon_session = client.get("/session")
+        assert anon_session.status_code == 200
+        assert anon_session.json()["role"] == "viewer"
+        # A valid operator token still resolves to operator, even in public mode.
+        assert client.get("/session", headers=_op(_OPERATOR)).json()["role"] == "operator"
+        # Mutations remain operator-only: an anonymous approve is rejected and
+        # changes nothing.
+        rejected = client.post(
+            f"/incidents/{incident_id}/approve", json={"decision": "approve"}
+        )
+        assert rejected.status_code == 401
+        assert store.approvals_for_incident(incident_id) == []
+        assert store.get(incident_id).state is IncidentState.AWAITING_APPROVAL
+
+
+def test_public_demo_reads_off_keeps_reads_protected() -> None:
+    store = IncidentStore(600)
+    _awaiting(store)
+    with TestClient(_app(store)) as client:  # default: public_demo_reads False
+        assert client.get("/incidents").status_code == 401
+        assert client.get("/session").status_code == 401
+
+
+def test_public_demo_reads_flag_is_stamped_into_served_ui() -> None:
+    store = IncidentStore(600)
+    with TestClient(_app(store, public_demo_reads=True)) as on_client:
+        html_on = on_client.get("/").text
+    with TestClient(_app(store)) as off_client:
+        html_off = off_client.get("/").text
+    assert 'name="praxis-public-demo-reads" content="true"' in html_on
+    assert "__PRAXIS_PUBLIC_DEMO_READS__" not in html_on
+    assert 'name="praxis-public-demo-reads" content="false"' in html_off
+
+
+def test_config_parses_public_demo_reads(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.load_dotenv", lambda *a, **k: None)
+    for name in ("APP_ENV", "DEPLOYED_ON", "MEMORY_BACKEND"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("DEPLOYED_ON", "local")
+    monkeypatch.setenv("PROVIDER_ORDER", "qwencloud,openrouter")
+    monkeypatch.setenv("PRAXIS_OPERATOR_TOKEN", _OPERATOR)
+    monkeypatch.delenv("PRAXIS_VIEWER_TOKEN", raising=False)
+
+    monkeypatch.setenv("PRAXIS_PUBLIC_DEMO_READS", "true")
+    assert Settings.from_env().public_demo_reads is True
+    monkeypatch.setenv("PRAXIS_PUBLIC_DEMO_READS", "false")
+    assert Settings.from_env().public_demo_reads is False
+    monkeypatch.delenv("PRAXIS_PUBLIC_DEMO_READS", raising=False)
+    assert Settings.from_env().public_demo_reads is False
