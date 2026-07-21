@@ -1,11 +1,19 @@
 # Praxis
 
-Praxis is a Qwen-powered alert-to-remediation autopilot: it accepts a signed operational alert, investigates it, proposes a risk-labelled plan, waits for an explicit approval record, executes only the approved actions, and then attempts to record reusable incident memory with the outcome visible in its trail.
+On-call engineers drown in operational alerts, and most are variations of problems already solved — yet each still demands manual triage, investigation, and a careful fix under pressure.
+
+**Praxis** is a Qwen-powered alert-to-remediation autopilot that takes the first pass. It accepts a signed operational alert, investigates it, and proposes a risk-labelled remediation plan — then **stops for an explicit human approval before it changes anything**. On approval it executes only the approved actions and records reusable incident memory, with every step visible in an auditable decision trail.
 
 - **Live application:** [https://praxis.kopachelli.dev](https://praxis.kopachelli.dev)
 - **API health:** [https://praxis.kopachelli.dev/healthz](https://praxis.kopachelli.dev/healthz)
 
-> **Submission integrity:** the Qwen Cloud Hackathon entry is frozen while judging is in progress. This working tree contains post-deadline hardening and must not be presented as the original submitted snapshot. Do not push changes to linked materials, replace the video, or edit the Devpost entry unless the organizer grants written permission or judging ends.
+**TL;DR for judges**
+- **What it is:** an alert → triage → plan → **human approval** → execute → memory autopilot, with a mandatory human-in-the-loop gate no state change can skip.
+- **Runtime:** Qwen-family models only (Qwen Cloud, with OpenRouter as a same-Qwen fallback), deployed on Alibaba Cloud Function Compute 3.0; semantic memory in Alibaba Cloud Tablestore.
+- **Built with:** OpenAI Codex (GPT-5.6 Sol) as the development agent — build-time only, never in the product's model routing.
+- **Review it:** open the [live app](https://praxis.kopachelli.dev); `GET /healthz` is a public, token-free deployment proof. For read-only access to the dashboard see [For hackathon reviewers](#for-hackathon-reviewers).
+
+> **Hackathon submissions:** this repository is the public source for Praxis. It is entered in the **Qwen Cloud Hackathon** — the product runtime calls Qwen-family models only, deployed on Alibaba Cloud Function Compute — and in the **OpenAI Open Model Hackathon / Build Week**, where OpenAI Codex (GPT-5.6 Sol) was the development agent that built and hardened this codebase. The two are distinct: Codex is build-time tooling and never appears in the product's model routing. The live deployment at the URL above may trail this working tree; the *Current status* table below states exactly what is implemented versus live-verified.
 
 ## Runtime boundary
 
@@ -20,19 +28,19 @@ Codex running GPT-5.6 Sol was used as a development tool. That build-time toolin
 
 ## Safety model
 
-No state-changing tool can run until the API has recorded approval for the exact proposed plan. The state machine enforces this boundary: `AWAITING_APPROVAL` is the only route into `EXECUTING`. Accepted ADR-025 adds an application-level bearer boundary to every incident read and approval mutation; the server authenticates the single `demo-operator` role without accepting caller-controlled attribution. The UI starts locked, holds the entered token only in JavaScript memory, and still requires the separate native confirmation before approval. The public root, health endpoint, and HMAC-signed webhook retain their separate public boundaries.
+No state-changing tool can run until the API has recorded approval for the exact proposed plan. The state machine enforces this boundary: `AWAITING_APPROVAL` is the only route into `EXECUTING`. Accepted ADR-025 adds an application-level bearer boundary to every incident read and approval mutation; the server authenticates the single `demo-operator` role without accepting caller-controlled attribution. Accepted ADR-029 adds a **separate read-only viewer role**: a distinct token, resolved through `GET /session`, grants incident reads only and is rejected at every mutation boundary — so a reviewer or a recording tool can watch the live timeline without any approval authority. The UI starts locked, holds the entered token only in JavaScript memory, and still requires the separate native confirmation before approval. The public root, health endpoint, and HMAC-signed webhook retain their separate public boundaries.
 
-The one real write adapter restarts only the dedicated, disposable `praxis-demo-target` Function Compute function. Caution and dangerous tools remain visibly labelled dry runs. Rejecting or editing a plan returns it to Qwen for regeneration and never executes the rejected proposal.
+The one real write adapter restarts only the dedicated, disposable `praxis-demo-target` Function Compute function. Caution and dangerous tools remain visibly labelled dry runs. Rejecting or editing a plan returns it to Qwen for regeneration and never executes the rejected proposal. Accepted ADR-028 closes the non-atomic gap where a real action succeeds but its outcome cannot be audited: Praxis records a durable pre-dispatch intent (with a pre-action boot-id baseline) and, when the outcome cannot be verified as succeeded, moves the incident to a terminal `RECONCILIATION_REQUIRED` state — never a false success and never an automatic retry.
 
 ## Current status
 
-This table describes the post-deadline working tree, not the frozen hackathon snapshot or an assertion that every local hardening change is already live. The public URL is the last authorized Function Compute revision and currently predates the recording-ready accessibility, memory-similarity, and UI-contract updates. The read-only marker check in `docs/DEMO_AND_SUBMISSION.md` must pass after a permitted redeploy before screenshots or video are captured.
+This table describes the current working tree (published in this repository), not an assertion that every change is already live. The public URL still serves the last deployed Function Compute revision, which predates the ADR-028 reconciliation and ADR-029 viewer-role work and the recording-ready UI updates; a redeploy plus the origin/marker checks in `docs/DEMO_AND_SUBMISSION.md` must pass before those are recorded as live and before a read-only viewer token works against the public site.
 
 | Area | Current evidence |
 | --- | --- |
 | Intake and incident core | Signed webhook intake, normalization, bounded request bodies, state machine, and trace-correlated timeline are implemented and tested. Same-key deduplication and active incidents are process-local; caller-supplied idempotency identity is not yet bound into the body signature, and supplied keys are not yet normalized or independently bounded. Proposed ADR-026/027 cover authenticity/durability; proposed ADR-030 covers parsing and retention bounds. |
 | Qwen agent | Qwen Cloud-first classification, thinking-mode triage, tool calling, strict plan validation, and bounded same-Qwen fallback are implemented and tested locally. Accepted ADR-024 adds a 1-running/3-pending FIFO controller, 300s pending expiry, 240s whole-job deadlines, and one provisioned non-idle controller/target instance in the manifests. Live capacity verification remains required after redeploy. |
-| HITL and execution | The locked browser UI uses a memory-only operator bearer token; the API protects incident reads plus approve/reject/edit. Regeneration, the isolated FC restart adapter, and dry-run adapters are implemented. Final camera-quality restart evidence still requires a freshly staged incident and the owner's two visible approval actions; the new auth boundary is not a live claim until both public origins pass post-deploy probes. |
+| HITL and execution | The locked browser UI uses a memory-only bearer token; incident reads accept the operator or the ADR-029 read-only viewer token, while approve/reject/edit stay operator-only. Regeneration, the isolated FC restart adapter, dry-run adapters, and ADR-028's durable pre-dispatch intent with the terminal `RECONCILIATION_REQUIRED` disposition are implemented and tested. Final camera-quality restart evidence still requires a freshly staged incident and the owner's two visible approval actions; the auth and reconciliation boundaries are not a live claim until a redeploy and both public origins pass post-deploy probes. |
 | Tablestore memory | The 1024-d Float32/cosine table and index, dedicated least-privilege FC role, deployed runtime configuration, resolution-write implementation/tests, semantic-recall implementation/tests, and read-only in-instance schema smoke are green. Delivery is currently one best-effort post-resolution attempt, and stored text is plan-derived rather than verified-execution-derived; proposed ADR-019/020 cover those gaps. The deployed resolved-row plus fresh-recurrence exit proof remains human-gated. |
 | Submission assets | The architecture export and standalone Alibaba proof are present. Video, screenshots, and publication work remain separate from the locked Devpost entry. |
 
@@ -42,7 +50,7 @@ The remaining human-gated evidence is deliberate: the project never synthesizes 
 
 ![Praxis architecture](docs/assets/praxis-architecture.png)
 
-This is a logical summary of the accepted Qwen/Alibaba design, not live deployment proof. ADR-024's active FC lifecycle/admission bounds and ADR-025's single-operator authentication are implemented in the working tree; the current public revision must still pass the live deployment and origin probes before those capabilities are recorded. Signed/durable idempotency authority, uncertain tool-outcome reconciliation, and least-privilege recorder access remain proposed in ADR-026 through ADR-029; M4's real write-and-distinct-recurrence proof is still open.
+This is a logical summary of the accepted Qwen/Alibaba design, not live deployment proof. ADR-024's active FC lifecycle/admission bounds, ADR-025's single-operator authentication, ADR-028's uncertain-tool-outcome reconciliation, and ADR-029's read-only viewer role are all implemented in the working tree; the current public revision must still pass a redeploy and origin probes before those capabilities are recorded as live. Signed/durable idempotency authority remains proposed in ADR-026/027, ADR-030 covers idempotency-key parsing/retention bounds, and M4's real write-and-distinct-recurrence proof is still open.
 
 1. A source sends a signed alert to the FastAPI controller on Function Compute.
 2. Praxis normalizes it, applies process-local same-key deduplication, acquires bounded lifecycle capacity, and acknowledges the webhook after queuing triage. The accepted manifests keep exactly one provisioned controller instance non-idle; inside it, one job runs and up to three wait FIFO under 300s/240s pending/job deadlines. A full queue fails before incident mutation, while a retained duplicate bypasses admission. Live control-plane verification remains required after deploy.
@@ -64,7 +72,10 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the detailed flow and state mach
 | `GET` | `/incidents/{id}` | Bearer-protected incident, plan, memory match, and complete trail |
 | `POST` | `/incidents/{id}/approve` | Bearer-protected `approve`, `reject`, or `edit` decision for the server-owned operator role |
 | `GET` | `/incidents/{id}/memory-match` | Bearer-protected top semantic prior-incident match or `null` |
+| `GET` | `/session` | Reports the authenticated role (`operator` or read-only `viewer`) so the UI can gate controls (ADR-029) |
 | `GET` | `/healthz` | Deployment and resolved-model health proof |
+
+The three incident read endpoints (`GET /incidents`, `GET /incidents/{id}`, `GET /incidents/{id}/memory-match`) and `GET /session` accept **either** the operator token **or** the read-only viewer token; only `POST /incidents/{id}/approve` requires the operator token, so read access never confers approval authority.
 
 There is no public manual planning endpoint. Initial planning starts only after accepted signed intake; correction planning starts only through the HITL reject/edit flow.
 
@@ -261,7 +272,7 @@ Never record or paste `.env`, Serverless Devs raw output, temporary credentials,
 
 ## Demo commands
 
-> **Do not run these commands against the public deployment during the judging freeze or while the owner is unavailable.** A future live rehearsal requires written organizer permission or the end of judging, an authorized redeploy that passes the recording-marker preflight, and a protected owner-controlled approval path. The commands below are preparation, not authorization.
+> **Run these against the public deployment only with the maintainer's involvement.** A live rehearsal needs an authorized redeploy that passes the recording-marker preflight and a protected owner-controlled approval path; approval is always performed by the human operator, never by automation. The commands below are preparation, not a substitute for that approval.
 
 Target the deployed application explicitly:
 
@@ -290,6 +301,12 @@ python scripts/fire_alert.py --base-url https://praxis.kopachelli.dev --recurren
 ```
 
 The human operator must unlock the UI off camera, inspect the exact plan, and perform both the approval click and native confirmation. The token remains only in that page's memory and must never be given to recording automation. Recording automation must not approve a state-changing action. The complete shot list and frozen-submission rules are in [DEMO_AND_SUBMISSION.md](docs/DEMO_AND_SUBMISSION.md).
+
+## For hackathon reviewers
+
+- **Live app:** [https://praxis.kopachelli.dev](https://praxis.kopachelli.dev) · **Health:** [/healthz](https://praxis.kopachelli.dev/healthz)
+- **Read-only review access (ADR-029):** the dashboard is authentication-gated, but a reviewer does not need — and must never be given — the operator token. A separate **read-only viewer token** unlocks the timeline for observation only: it can read incidents and the full decision trail but is rejected at every mutation boundary, so it cannot approve, reject, or edit anything. The maintainer supplies that viewer token to reviewers out of band (request it via the Devpost submission page or the contact on the GitHub profile); it is never committed to this repository, embedded in a recording prompt, or printed in any artifact, and it is rotated after review. Viewer access requires the ADR-029-enabled revision to be deployed (see the *Current status* note above); until then, use the token-free checks below.
+- **What you can verify without any token, on the current live deployment:** `GET /healthz` returns the deployed model, version, lifecycle bounds, and readiness flags; `GET /` serves the locked UI; an unauthenticated `GET /incidents` returns the fixed `401` challenge (the ADR-025 auth boundary is already live).
 
 ## Project documentation
 
