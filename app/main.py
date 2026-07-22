@@ -150,6 +150,56 @@ def _build_runtime_tool_registry(settings: Settings) -> ToolRegistry:
     return registry
 
 
+_DEMO_SEED_PAYLOAD = {
+    "source": "sentry",
+    "title": "TimeoutError in checkout-service",
+    "service": "checkout-service",
+    "level": "error",
+    "message": "Upstream payment gateway timed out after 30s",
+    "extra": {"region": "eu-central", "occurrences": 47},
+}
+
+
+def _seed_demo_incident(
+    store: IncidentStore,
+    task_manager: AgentTaskManager,
+) -> None:
+    """Seed one real demo incident on startup so the public dashboard is never
+    empty for reviewers. Off by default; fail-open — any error only logs and
+    never blocks startup [ADR-031]."""
+
+    try:
+        if store.list_summaries():
+            return
+        from app.webhook import normalize_payload
+
+        normalized = normalize_payload(_DEMO_SEED_PAYLOAD)
+        incident, duplicate = store.create_or_get(
+            source=normalized.source,
+            raw_payload=_DEMO_SEED_PAYLOAD,
+            service=normalized.service,
+            severity=normalized.severity,
+            signal=normalized.signal,
+            title=normalized.title,
+            idempotency_key="praxis-demo-seed-v1",
+        )
+        if not duplicate:
+            task_manager.schedule(incident.id, "demo-seed")
+            logger.info(
+                "demo_incident_seeded",
+                extra={"incident_id": incident.id, "trace_id": "demo-seed"},
+            )
+    except Exception as exc:
+        logger.warning(
+            "demo_seed_failed",
+            extra={
+                "incident_id": "-",
+                "trace_id": "demo-seed",
+                "error_type": type(exc).__name__,
+            },
+        )
+
+
 def create_app(
     settings: Settings | None = None,
     incident_store: IncidentStore | None = None,
@@ -220,6 +270,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_application: FastAPI):
+        if active_settings.seed_demo_incident:
+            _seed_demo_incident(active_store, active_task_manager)
         try:
             yield
         finally:

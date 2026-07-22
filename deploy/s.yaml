@@ -118,6 +118,7 @@ resources:
         PORT: '9000'
         PROVIDER_ORDER: qwencloud,openrouter
         PRAXIS_PUBLIC_DEMO_READS: 'true'
+        PRAXIS_SEED_DEMO_INCIDENT: 'true'
         DASHSCOPE_API_KEY: ${env('DASHSCOPE_API_KEY')}
         OPENROUTER_API_KEY: ${env('OPENROUTER_API_KEY')}
         PRAXIS_OPERATOR_TOKEN: ${env('PRAXIS_OPERATOR_TOKEN')}

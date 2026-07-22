@@ -240,6 +240,7 @@ class Settings:
     operator_token: str = field(default="", repr=False)
     viewer_token: str = field(default="", repr=False)
     public_demo_reads: bool = False
+    seed_demo_incident: bool = False
     webhook_signing_secret: str = field(default="", repr=False)
     dedup_window_seconds: int = 600
     max_webhook_body_bytes: int = DEFAULT_MAX_WEBHOOK_BODY_BYTES
@@ -508,6 +509,12 @@ class Settings:
             "PRAXIS_PUBLIC_DEMO_READS", ""
         ).strip().lower() in {"1", "true", "yes", "on"}
 
+        # Optional demo aid: seed one real incident on startup so the public
+        # dashboard is never empty for reviewers. Off by default; fail-open.
+        seed_demo_incident = os.getenv(
+            "PRAXIS_SEED_DEMO_INCIDENT", ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
+
         return cls(
             app_env=app_env,
             app_version=os.getenv("APP_VERSION", "0.1.0"),
@@ -532,6 +539,7 @@ class Settings:
             operator_token=operator_token,
             viewer_token=viewer_token,
             public_demo_reads=public_demo_reads,
+            seed_demo_incident=seed_demo_incident,
             webhook_signing_secret=webhook_signing_secret,
             dedup_window_seconds=dedup_window_seconds,
             max_webhook_body_bytes=max_webhook_body_bytes,

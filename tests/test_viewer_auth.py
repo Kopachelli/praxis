@@ -259,3 +259,38 @@ def test_config_parses_public_demo_reads(monkeypatch) -> None:
     assert Settings.from_env().public_demo_reads is False
     monkeypatch.delenv("PRAXIS_PUBLIC_DEMO_READS", raising=False)
     assert Settings.from_env().public_demo_reads is False
+
+
+def test_seed_demo_incident_populates_empty_store_on_startup() -> None:
+    """Demo aid: with the seed flag on, one real incident is created on startup
+    so the public dashboard is never empty for reviewers."""
+
+    store = IncidentStore(600)
+    with TestClient(_app(store, seed_demo_incident=True)):
+        pass
+    summaries = store.list_summaries()
+    assert len(summaries) == 1
+    assert summaries[0].service == "checkout-service"
+
+
+def test_seed_disabled_leaves_store_empty_on_startup() -> None:
+    store = IncidentStore(600)
+    with TestClient(_app(store)):  # default: seed_demo_incident False
+        pass
+    assert store.list_summaries() == []
+
+
+def test_config_parses_seed_demo_incident(monkeypatch) -> None:
+    monkeypatch.setattr("app.config.load_dotenv", lambda *a, **k: None)
+    for name in ("APP_ENV", "DEPLOYED_ON", "MEMORY_BACKEND"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.setenv("DEPLOYED_ON", "local")
+    monkeypatch.setenv("PROVIDER_ORDER", "qwencloud,openrouter")
+    monkeypatch.setenv("PRAXIS_OPERATOR_TOKEN", _OPERATOR)
+    monkeypatch.delenv("PRAXIS_VIEWER_TOKEN", raising=False)
+
+    monkeypatch.setenv("PRAXIS_SEED_DEMO_INCIDENT", "true")
+    assert Settings.from_env().seed_demo_incident is True
+    monkeypatch.delenv("PRAXIS_SEED_DEMO_INCIDENT", raising=False)
+    assert Settings.from_env().seed_demo_incident is False
