@@ -58,6 +58,21 @@ The `docs/assets` allowlist above includes the reviewed OpenAI/blog cover at
 `docs/assets/praxis-openai-cover.png`. Keep it presentation-only; it is not
 runtime or Alibaba deployment evidence.
 
+The `docs/submission/` folder is otherwise excluded (below), with **one reviewed
+carve-out**: the Function Compute health-probe evidence, which an adversarial
+audit confirmed contains only boolean health flags plus a single deploy
+timestamp — no account id, ARN, resource id, IP, or secret. It is the only
+submission file cleared for the public surface:
+
+```powershell
+git add -- docs/submission/alibaba_fc_probe_evidence.json
+```
+
+The other Alibaba evidence files (`alibaba_fc_evidence.json`,
+`alibaba_fc_invocation_log_evidence.md`) are **never** published here: they embed
+the Alibaba account id in ARNs and trace ids. They live only in a separate
+private evidence repository shared with hackathon judges on request.
+
 Do not stage `docs/screenshots/` as a directory. Its current dashboard capture is
 the stale authorized revision and its current health capture is replacement-
 required. After owner-authorized final evidence capture, add only the exact
@@ -106,7 +121,8 @@ end is recorded.
 - `docs/worklog/` and `docs/LINEAR_QUEUE.md`, which are internal operational
   mirrors rather than product documentation.
 - `docs/submission/` while it contains post-deadline drafts or unresolved public
-  URL/media placeholders.
+  URL/media placeholders — **except** the reviewed `alibaba_fc_probe_evidence.json`
+  carve-out noted above. The account-id-bearing evidence files stay private.
 - `docs/screenshots/` until owner-authorized presentation-ready replacements are
   captured and their exact filenames are added above; never stage the directory
   broadly.
